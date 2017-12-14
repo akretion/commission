@@ -51,7 +51,7 @@ class SaleCommissionMakeInvoice(models.TransientModel):
         self.ensure_one()
         if not self.settlements:
             self.settlements = self.env['sale.commission.settlement'].search(
-                [('state', '=', 'settled'), ('agent_type', '=', 'agent')])
+                [('state', '=', 'settled')])
         self.settlements.make_invoices(
             self.journal, self.refund_journal, self.product,
             self.grouping_invoice, date=self.date)
