@@ -5,6 +5,7 @@
 from lxml import etree
 
 from odoo import _, api, exceptions, fields, models
+from odoo.tools.float_utils import float_is_zero
 
 
 class AccountMove(models.Model):
@@ -268,15 +269,43 @@ class AccountInvoiceLineAgent(models.Model):
     def _compute_settled(self):
         # Count lines of not open or paid invoices as settled for not
         # being included in settlements
-        for line in self:
-            line.settled = any(
-                x.settlement_id.state != "cancel" for x in line.settlement_line_ids
+        for line in self.filtered(lambda l: l.settlement_line_ids.settlement_id.state != "cancel"):
+            line.settled = float_is_zero(
+                line.currency_id.round(line.amount - line.amount_settled),
+                precision_digits=line.currency_id.rounding,
             )
 
     @api.depends("object_id", "object_id.company_id")
     def _compute_company(self):
         for line in self:
             line.company_id = line.object_id.company_id
+
+    def _get_invoice_payments(self):
+        (
+            invoice_partials,
+            exchange_diff_moves,
+        ) = self.invoice_id._get_reconciled_invoices_partials()
+        return invoice_partials
+
+    def _get_invoice_paid(self):
+        date_payment_to = self.env.context.get("date_payment_to")
+        invoice_paid_amount = 0.0
+        invoice_paid_dates = []
+        for __, amount, counterpart_line in self._get_invoice_payments():
+            if counterpart_line.date <= date_payment_to:
+                invoice_paid_amount += amount
+                invoice_paid_dates.append(counterpart_line.date)
+        return invoice_paid_amount
+
+    def _get_settlement_amount(self):
+        if self.commission_id.invoice_state == "partial":
+            total_paid = self._get_invoice_paid_amount()
+            paid_ratio = total_paid / self.invoice_id.amount_total
+            target_settled_amount = self.amount * paid_ratio
+            amount_to_settle = target_settled_amount - self.amount_settled
+            return max(0, self.invoice_id.currency_id.round(amount_to_settle))
+        else:
+            return self.amount
 
     @api.constrains("agent_id", "amount")
     def _check_settle_integrity(self):
@@ -292,28 +321,34 @@ class AccountInvoiceLineAgent(models.Model):
         :return: bool
         """
         self.ensure_one()
-        payment_based_commission = self.commission_id.invoice_state == "paid"
-        if payment_based_commission and self._skip_future_payments():
+        full_payment_based_commission = self.commission_id.invoice_state == "paid"
+        partial_payment_based_commission = self.commission_id.invoice_state == "partial"
+        if full_payment_based_commission and self._skip_future_payments():
+            return True
+        if partial_payment_based_commission and self._skip_partial_payments():
             return True
         return (
-            payment_based_commission
-            and self.invoice_id.payment_state not in ["in_payment", "paid", "reversed"]
-        ) or self.invoice_id.state != "posted"
+            (
+                full_payment_based_commission
+                and self.invoice_id.payment_state
+                not in ["in_payment", "paid", "reversed"]
+            )
+            or (
+                partial_payment_based_commission
+                and self.invoice_id.payment_state
+                not in ["in_payment", "partial", "paid", "reversed"]
+            )
+            or self.invoice_id.state != "posted"
+        )
 
     def _skip_future_payments(self):
         date_payment_to = self.env.context.get("date_payment_to")
         if date_payment_to:
-            payments_dates = []
-            (
-                invoice_partials,
-                exchange_diff_moves,
-            ) = self.invoice_id._get_reconciled_invoices_partials()
-            for (
-                _partial,
-                _amount,
-                counterpart_line,
-            ) in invoice_partials:
-                payments_dates.append(counterpart_line.date)
-            if any(date_payment_to < date for date in payments_dates):
+            payments_dates = [m.date for _, _, m in self._get_invoice_payments()]
+            if any(date_payment_to <= date for date in payments_dates):
                 return True
         return False
+
+    def _skip_partial_payments(self):
+        amount_settled = self._get_settlement_amount()
+        return (self.amount_settled + amount_settled) <= self.amount_settled

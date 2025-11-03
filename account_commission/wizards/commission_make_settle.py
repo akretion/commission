@@ -48,7 +48,7 @@ class CommissionMakeSettle(models.TransientModel):
                     "invoice_agent_line_id": line.id,
                     "date": line.invoice_date,
                     "commission_id": line.commission_id.id,
-                    "settled_amount": line.amount,
+                    "settled_amount": line._get_settlement_amount(),
                 }
             )
         return res
