@@ -15,6 +15,16 @@ class AccountMove(models.Model):
         compute="_compute_commission_total",
         store=True,
     )
+    commission_settled = fields.Float(
+        string="Commissions Settled",
+        compute="_compute_commission_total",
+        store=True,
+    )
+    commission_to_settle = fields.Float(
+        string="Commissions To Settle",
+        compute="_compute_commission_total",
+        store=True,
+    )
     partner_agent_ids = fields.Many2many(
         string="Agents",
         comodel_name="res.partner",
@@ -61,12 +71,23 @@ class AccountMove(models.Model):
         )
         return [("id", "in", ail_agents.mapped("object_id.move_id").ids)]
 
-    @api.depends("line_ids.agent_ids.amount")
+    @api.depends(
+        "line_ids.agent_ids.amount",
+        "line_ids.agent_ids.amount_settled",
+    )
     def _compute_commission_total(self):
         for record in self:
-            record.commission_total = 0.0
+            record.commission_total = (
+                record.commission_settled
+            ) = record.commission_to_settle = 0.0
             for line in record.line_ids:
                 record.commission_total += sum(x.amount for x in line.agent_ids)
+                record.commission_settled += sum(
+                    x.amount_settled for x in line.agent_ids
+                )
+                record.commission_to_settle += sum(
+                    x.amount_to_settle for x in line.agent_ids
+                )
 
     def action_post(self):
         """Put settlements associated to the invoices in invoiced state."""
@@ -199,10 +220,22 @@ class AccountInvoiceLineAgent(models.Model):
     currency_id = fields.Many2one(
         related="object_id.currency_id",
     )
+    amount_settled = fields.Monetary(
+        compute="_compute_amount",
+        readonly=True,
+        store=True,
+    )
+    amount_to_settle = fields.Monetary(
+        compute="_compute_amount",
+        readonly=True,
+        store=True,
+    )
 
     @api.depends(
         "object_id.price_subtotal",
         "object_id.commission_free",
+        "settlement_line_ids",
+        "settlement_line_ids.settlement_id.state",
         "commission_id",
     )
     def _compute_amount(self):
@@ -214,9 +247,17 @@ class AccountInvoiceLineAgent(models.Model):
                 inv_line.product_id,
                 inv_line.quantity,
             )
+            line.amount_settled = sum(
+                line.settlement_line_ids.filtered(
+                    lambda s: s.settlement_id.state != "cancel"
+                ).mapped("settled_amount")
+            )
+            line.amount_to_settle = line.amount - line.amount_settled
             # Refunds commissions are negative
             if line.invoice_id.move_type and "refund" in line.invoice_id.move_type:
                 line.amount = -line.amount
+                line.amount_settled = -line.amount_settled
+                line.amount_to_settle = -line.amount_to_settle
 
     @api.depends(
         "settlement_line_ids",

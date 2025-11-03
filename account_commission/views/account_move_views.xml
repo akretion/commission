@@ -117,6 +117,22 @@
                         ('move_type', 'not in', ['out_invoice', 'out_refund'])
                     ]}"
                 />
+                <field
+                    name="commission_settled"
+                    widget="monetary"
+                    options="{'currency_field': 'currency_id'}"
+                    attrs="{'invisible': [
+                        ('move_type', 'not in', ['out_invoice', 'out_refund'])
+                    ]}"
+                />
+                <field
+                    name="commission_to_settle"
+                    widget="monetary"
+                    options="{'currency_field': 'currency_id'}"
+                    attrs="{'invisible': [
+                        ('move_type', 'not in', ['out_invoice', 'out_refund'])
+                    ]}"
+                />
             </field>
         </field>
     </record>
