@@ -7,7 +7,7 @@ from datetime import datetime
 
 from dateutil.relativedelta import relativedelta
 
-from odoo import fields
+from odoo import Command, fields
 from odoo.exceptions import UserError, ValidationError
 from odoo.tests import Form, tagged
 
@@ -66,15 +66,11 @@ class TestAccountCommission(TestCommissionBase):
             "move_type": "out_invoice",
             "partner_id": self.partner.id,
             "invoice_line_ids": [
-                (
-                    0,
-                    0,
+                Command.create(
                     {
                         "product_id": self.product.id,
                         "agent_ids": [
-                            (
-                                0,
-                                0,
+                            Command.create(
                                 {"agent_id": agent.id, "commission_id": commission.id},
                             )
                         ],
@@ -208,9 +204,7 @@ class TestAccountCommission(TestCommissionBase):
         invoice.mapped("invoice_line_ids.agent_ids").unlink()
         self.assertIn("No", invoice.invoice_line_ids[0].commission_status)
         invoice.invoice_line_ids[0].agent_ids = [
-            (
-                0,
-                0,
+            Command.create(
                 {
                     "agent_id": self.env.ref(
                         "commission.res_partner_pritesh_sale_agent"
@@ -218,9 +212,7 @@ class TestAccountCommission(TestCommissionBase):
                     "commission_id": self.env.ref("commission.demo_commission").id,
                 },
             ),
-            (
-                0,
-                0,
+            Command.create(
                 {
                     "agent_id": self.env.ref(
                         "commission.res_partner_eiffel_sale_agent"
@@ -250,9 +242,7 @@ class TestAccountCommission(TestCommissionBase):
                     "partner_id": self.partner.id,
                     "ref": "sale_comission_TEST",
                     "invoice_line_ids": [
-                        (
-                            0,
-                            0,
+                        Command.create(
                             {
                                 "product_id": self.product.id,
                                 "quantity": 1,
@@ -274,9 +264,7 @@ class TestAccountCommission(TestCommissionBase):
                     "move_type": "out_invoice",
                     "partner_id": self.partner.id,
                     "invoice_line_ids": [
-                        (
-                            0,
-                            0,
+                        Command.create(
                             {
                                 "product_id": self.product.id,
                                 "quantity": 1,
