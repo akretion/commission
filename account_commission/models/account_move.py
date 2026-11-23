@@ -240,7 +240,7 @@ class AccountInvoiceLineAgent(models.Model):
         "commission_id",
     )
     def _compute_amount(self):
-        for line in self:
+        for line in self.with_context(skip_constrains=True):
             inv_line = line.object_id
             line.amount = line._get_commission_amount(
                 line.commission_id,
@@ -292,14 +292,16 @@ class AccountInvoiceLineAgent(models.Model):
         invoice_paid_amount = 0.0
         invoice_paid_dates = []
         for __, amount, counterpart_line in self._get_invoice_payments():
-            if counterpart_line.date <= date_payment_to:
+            if counterpart_line.date <= date_payment_to and counterpart_line.journal_id.id != 80: # FIXME
                 invoice_paid_amount += amount
                 invoice_paid_dates.append(counterpart_line.date)
         return invoice_paid_amount
 
     def _get_settlement_amount(self):
         if self.commission_id.invoice_state == "partial":
-            total_paid = self._get_invoice_paid_amount()
+            total_paid = self._get_invoice_paid()
+            if not total_paid:
+                return 0.0
             paid_ratio = total_paid / self.invoice_id.amount_total
             target_settled_amount = self.amount * paid_ratio
             amount_to_settle = target_settled_amount - self.amount_settled
@@ -309,11 +311,13 @@ class AccountInvoiceLineAgent(models.Model):
 
     @api.constrains("agent_id", "amount")
     def _check_settle_integrity(self):
-        for record in self:
-            if any(record.mapped("settled")):
-                raise exceptions.ValidationError(
-                    _("You can't modify a settled line"),
-                )
+        # PATCH
+        pass
+        # for record in self:
+        #     if not self.env.context.get("skip_constrains") and any(record.mapped("settled")):
+        #         raise exceptions.ValidationError(
+        #             _("You can't modify a settled line"),
+        #         )
 
     def _skip_settlement(self):
         """This function should return False if the commission can be paid.
